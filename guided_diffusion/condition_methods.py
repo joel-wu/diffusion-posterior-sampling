@@ -58,7 +58,7 @@ class ConditioningMethod(ABC):
 
         if self.noiser.__name__ == 'gaussian':
             diff = measurement - self.operator.forward(x_0_hat, **kwargs)
-            norm = torch.linalg.norm(diff.view(diff.shape[0], -1), dim=1)  # shape: (B,)
+            norm = torch.linalg.norm(diff.reshape(diff.shape[0], -1), dim=1)  # shape: (B,)
             norm_total = norm.sum()  # scalar
             norm_grad = torch.autograd.grad(norm_total, x_prev, retain_graph=True)[0]
 
