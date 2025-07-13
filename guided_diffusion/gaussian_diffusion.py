@@ -309,6 +309,7 @@ class GaussianDiffusion:
             beam_width=2,
             topk=1,
             eta=0.5,
+            search_strategy="beam", 
             selection_method="brightness",
             **kwargs
     ):
@@ -323,9 +324,15 @@ class GaussianDiffusion:
 
 
         device = x_start.device
-        x_prev = x_start.repeat(beam_width, 1, 1, 1).contiguous().detach().requires_grad_(True)
 
-        selection_interval = 50
+        if search_strategy == "bon":
+            x_prev = torch.randn((beam_width,) + x_start.shape[1:], device=device).contiguous().requires_grad_(True)
+        else:
+            x_prev = x_start.repeat(beam_width, 1, 1, 1).contiguous().detach().requires_grad_(True)
+
+
+        selection_interval = 50 if search_strategy == "beam" else self.num_timesteps + 1
+
 
         x0_old = None
 
