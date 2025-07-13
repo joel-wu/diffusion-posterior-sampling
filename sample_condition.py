@@ -89,12 +89,13 @@ def main():
         beam_width=8,
         topk=4,
         eta=0.5,
-        selection_method="niqe"
+        selection_method="niqe", 
+        search_strategy="beam"
     )
 
     # Working directory
     # out_path = os.path.join(args.save_dir, measure_config['operator']['name'])
-    prefix = "test29"
+    prefix = "DPS_baseline"
     out_path = os.path.join(args.save_dir, f"{prefix}_{measure_config['operator']['name']}")
     os.makedirs(out_path, exist_ok=True)
     for img_dir in ['input', 'recon', 'progress', 'label']:
