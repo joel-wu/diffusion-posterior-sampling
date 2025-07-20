@@ -88,6 +88,26 @@ def score_by_niqe(x0_pred, **kwargs):
 
     return -torch.tensor(scores, device=x0_pred.device, dtype=torch.float32)
 
+def score_by_ensemble(x0_pred, measurement, operator, **kwargs):
+    """
+    Ensemble scoring combining NIQE and forward residual scores.
+    Returns combined score where higher is better.
+    """
+    # Get NIQE scores (higher is better, so we negate the negative scores)
+    niqe_scores = -score_by_niqe(x0_pred, **kwargs)
+    
+    # Get forward residual scores (higher is better, so we negate the negative scores)  
+    forward_scores = -score_by_forward_residual(x0_pred, measurement, operator, **kwargs)
+    
+    # Normalize both scores to [0, 1] range for fair combination
+    niqe_normalized = (niqe_scores - niqe_scores.min()) / (niqe_scores.max() - niqe_scores.min() + 1e-8)
+    forward_normalized = (forward_scores - forward_scores.min()) / (forward_scores.max() - forward_scores.min() + 1e-8)
+    
+    # Combine scores (equal weight)
+    ensemble_scores = 0.5 * niqe_normalized + 0.5 * forward_normalized
+    
+    return ensemble_scores
+
 def score_by_bandpass_diff(x0_pred, x0_old, progress):
 
     def highpass_filter(x, cutoff=0.25):
@@ -318,6 +338,7 @@ class GaussianDiffusion:
             "consistency": score_by_consistency,
             "forward": score_by_forward_residual,
             "niqe": score_by_niqe,
+            "ensemble": score_by_ensemble,
         }
 
         selection_fn = SELECTION_FN_REGISTRY[selection_method]
@@ -425,6 +446,17 @@ class GaussianDiffusion:
 
         best_idx = torch.argmax(final_scores)  # or argmin
         x0_best = x0_pred[best_idx]
+
+        # 保存所有x0_pred到all_result文件夹
+        all_result_dir = os.path.join(save_root, "all_result")
+        os.makedirs(all_result_dir, exist_ok=True)
+        for i in range(x0_pred.shape[0]):
+            filename = f"x0_pred_{i:02d}.png"
+            plt.imsave(
+                os.path.join(all_result_dir, filename),
+                clear_color(x0_pred[i])
+            )
+
         return x0_best
 
     def p_sample(self, model, x, t):
@@ -587,11 +619,7 @@ class DDPM(SpacedDiffusion):
         out = self.p_mean_variance(model, x, t)
         sample = out['mean']
 
-        # noise = torch.randn_like(x)
-        gen = torch.Generator(device=x.device)
-        gen.manual_seed(42 + t[0].item())
-        noise = torch.randn(x.shape, dtype=x.dtype, device=x.device, generator=gen)
-
+        noise = torch.randn_like(x)
         if t != 0:  # no noise when t == 0
             sample += torch.exp(0.5 * out['log_variance']) * noise
 
@@ -600,32 +628,29 @@ class DDPM(SpacedDiffusion):
 
 @register_sampler(name='ddim')
 class DDIM(SpacedDiffusion):
-    def p_sample(self, model, x, t, eta=0.5):
+    def p_sample(self, model, x, t, eta=0.0):
         out = self.p_mean_variance(model, x, t)
-
+        
         eps = self.predict_eps_from_x_start(x, t, out['pred_xstart'])
-
+        
         alpha_bar = extract_and_expand(self.alphas_cumprod, t, x)
         alpha_bar_prev = extract_and_expand(self.alphas_cumprod_prev, t, x)
         sigma = (
-                eta
-                * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar))
-                * torch.sqrt(1 - alpha_bar / alpha_bar_prev)
+            eta
+            * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar))
+            * torch.sqrt(1 - alpha_bar / alpha_bar_prev)
         )
         # Equation 12.
-        # noise = torch.randn_like(x)
-        gen = torch.Generator(device=x.device)
-        gen.manual_seed(42 + t[0].item())
-        noise = torch.randn(x.shape, dtype=x.dtype, device=x.device, generator=gen)
+        noise = torch.randn_like(x)
         mean_pred = (
-                out["pred_xstart"] * torch.sqrt(alpha_bar_prev)
-                + torch.sqrt(1 - alpha_bar_prev - sigma ** 2) * eps
+            out["pred_xstart"] * torch.sqrt(alpha_bar_prev)
+            + torch.sqrt(1 - alpha_bar_prev - sigma ** 2) * eps
         )
 
         sample = mean_pred
         if t != 0:
             sample += sigma * noise
-
+        
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 
     def predict_eps_from_x_start(self, x_t, t, pred_xstart):
