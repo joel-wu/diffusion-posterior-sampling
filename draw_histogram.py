@@ -201,8 +201,8 @@ for i in range(0, len(psnr_arr), group_size):
     group_residual = residual_arr[i:i+group_size]
     niqe_norm = (group_niqe - group_niqe.min()) / (group_niqe.max() - group_niqe.min() + 1e-8)
     residual_norm = (group_residual - group_residual.min()) / (group_residual.max() - group_residual.min() + 1e-8)
-    ensemble = niqe_norm - residual_norm
-    idx = np.argmax(ensemble)
+    ensemble = niqe_norm + residual_norm
+    idx = np.argmin(ensemble)
     ensemble_scores.append(ensemble[idx])
     group_psnr.append(psnr_arr[i + idx])
 
